@@ -1,0 +1,148 @@
+resources:
+## REGIONAL INSTANCE GROUP MANAGER 
+- name: {{env["name"]}}-igm
+  type: compute.v1.regionInstanceGroupManager
+  properties:
+    instanceTemplate: $(ref.{{env["name"]}}-it.selfLink)
+    namedPorts:
+    - name: http
+      port: 80
+    targetSize: {{ properties["targetSize"] }}
+    region: {{ properties["region"] }}
+
+## INSTANCE TEMPLATE - TEMPLATE FOR THE VM INSTANCES
+- name: {{env["name"]}}-it
+  type: compute.v1.instanceTemplate
+  properties:
+    properties:
+      disks: 
+      - autoDelete: true
+        boot: true
+        deviceName: boot
+        diskSizeGb: "10" ##vm instances with debian9 only need 10gb of disk space
+        initializeParams:
+          sourceImage: projects/debian-cloud/global/images/family/debian-9
+        type: PERSISTENT
+      machineType: f1-micro
+      networkInterfaces:
+      - network: {{ properties["network"] }}
+        subnetwork: {{ properties["subnet"] }}
+        accessConfigs:
+          - name: External NAT
+            type: ONE_TO_ONE_NAT
+
+## REGIONAL AUTO-SCALER
+- name: {{ env["name"] }}-as
+  type: compute.v1.regionAutoscaler
+  properties:
+    region: {{ properties["region"] }}
+    target: $(ref.{{env["name"]}}-igm.selfLink)
+    autoscalingPolicy:
+      maxNumReplicas: {{ properties["maxNumReplicas"] }}
+      cpuUtilization:
+        utilizationTarget: 0.8
+      coolDownPeriodSec: 90
+
+## BACKEND SERVICE (EXTERNAL LOAD BALANCING)
+- name: {{env["name"]}}-backend-service
+  type: compute.v1.backendService
+  properties:
+    backends:
+      - group: $(ref.{{env["name"]}}-igm.instanceGroup)
+    healthChecks:
+      - $(ref.{{env["name"]}}-health-check.selfLink)
+    loadBalancingScheme: EXTERNAL
+    portName: http
+    protocol: HTTP
+
+## HTTP HEALTH CHECK - BACKEND SERVICE REQUIRES HEALTH CHECK
+- name: {{env["name"]}}-health-check
+  type: compute.v1.httpHealthCheck
+
+## HTTP HEALTH CHECK FIREWALL - GOOGLES DEFAULT FIREWALL BLOCKS HEALTH CHECK TRAFFIC
+- name: {{env["name"]}}-allow-healthcheck
+  type: compute.v1.firewall
+  properties:
+    sourceRanges:
+      - 35.191.0.0/16
+      - 130.211.0.0/22
+    allowed:
+      - IPProtocol: tcp
+        ports:
+          - 80
+
+## URL MAP - BEHAVES LIKE A ROUTER BETWEEN INCOMING TRAFFIC AND BACKEND SERVICE
+- name: {{env["name"]}}-url-map
+  type: compute.v1.urlMap
+  properties:
+    defaultService: $(ref.{{env["name"]}}-backend-service.selfLink)
+
+## HTTP TARGET PROXY - ENCRYPTS HTTP TRAFFIC WITH SSL CERTIFICATE
+- name: {{env["name"]}}-target-proxy
+  type: compute.v1.targetHttpsProxy
+  properties:
+    sslCertificates:
+      - $(ref.{{env["name"]}}-ssl-cert.selfLink)
+    urlMap: $(ref.{{env["name"]}}-url-map.selfLink)
+
+## SELF-SIGNED SSL CERTIFICATE
+- name: {{env["name"]}}-ssl-cert
+  type: compute.v1.sslCertificate
+  properties:
+    certificate: | ##https://codeblog.dotsandbrackets.com/external-load-balancer/ ##reference to the ssl certificate used below
+      -----BEGIN CERTIFICATE-----
+      MIIC/zCCAeegAwIBAgIJAKYi4Cy0C/w7MA0GCSqGSIb3DQEBBQUAMBYxFDASBgNV
+      BAMMC2V4YW1wbGUuY29tMB4XDTE5MDIwMTIyNDM0MloXDTI5MDEyOTIyNDM0Mlow
+      FjEUMBIGA1UEAwwLZXhhbXBsZS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
+      ggEKAoIBAQCsJlalGt3kyfOkSOQ071Lk1we9j34UBzgbydAk8C3kLzv72uEHMGFG
+      O6rdDuCo2/DocD8XZUCQclUWYqPsI34GdmmDMZk+axVi5ivp+BBurWhVJqxFeyTX
+      gQiXOL0p9BgvTCgpw2INOIFwX7w+R7or5HYTIcx63Ag7zNR+BueOJyO4baL62jnE
+      0nPUEE4gIsrhsNwg4b1sU4u2o3KgmXLU3mn/cqmlUwGsEXeIxqXR924cJ8c+Js/B
+      27exelnZXP8WcxUClZ4M67o+m2Ztb/DwPWTBjeNes8jkMxHEZb1FEtdddhCeMMGO
+      m6uVy2+myXG2VJT2bGzr2T/O98BG8XVnAgMBAAGjUDBOMB0GA1UdDgQWBBTJ1Ele
+      bydjWrqcr8Ex7WyqCgS0YzAfBgNVHSMEGDAWgBTJ1ElebydjWrqcr8Ex7WyqCgS0
+      YzAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBBQUAA4IBAQAL1+0cAwaU/OhRCHD0
+      w3y+PbZovMn36nr4ZXKYPNylMYeLKEJPMLh1s71Lj3G2yQYQLF/FGPl2PHajpJDa
+      vLcI09bF1Olfk7fzB4YfkrDi9bOq01Uii1Ocw3udVxekeHQgOsVqQ4iNHw13Kq4j
+      ABgYBspeSKafwA9yNkdqeW3o7fQGnaUU9h/feoW08Cz5RIHbkmd3e5YIWhV8BxT+
+      V2aMBQwGQt9QnBRfWv6kNhrrXEGcpQ3uCKpCF2xXiYsncd/imbtPv2+IhVxz0l96
+      FEDYJi4Ctj4X6kklqiFlTEpFOuhKHCj5xvnLk9NWaqLo+oARfIO++gy6zKRGzTLs
+      t6s2
+      -----END CERTIFICATE-----
+    privateKey: |
+      -----BEGIN RSA PRIVATE KEY-----
+      MIIEpQIBAAKCAQEArCZWpRrd5MnzpEjkNO9S5NcHvY9+FAc4G8nQJPAt5C87+9rh
+      BzBhRjuq3Q7gqNvw6HA/F2VAkHJVFmKj7CN+BnZpgzGZPmsVYuYr6fgQbq1oVSas
+      RXsk14EIlzi9KfQYL0woKcNiDTiBcF+8Pke6K+R2EyHMetwIO8zUfgbnjicjuG2i
+      +to5xNJz1BBOICLK4bDcIOG9bFOLtqNyoJly1N5p/3KppVMBrBF3iMal0fduHCfH
+      PibPwdu3sXpZ2Vz/FnMVApWeDOu6PptmbW/w8D1kwY3jXrPI5DMRxGW9RRLXXXYQ
+      njDBjpurlctvpslxtlSU9mxs69k/zvfARvF1ZwIDAQABAoIBAQCNdMNlz/ndcgT+
+      TdcXmEBpQjheD3buRjBYxTB/6cwL4LRNc8HNAngsGgOAuiTpHDGNDg8Jzm2LRCee
+      yVchRtjbvplc8HiXza45IiGbk/cMuvksXybXwSS44JKKkFkADE+DLfUivCXp7zCN
+      gl1QX+gfAQ/1EKTRn9Q0L0+8bzf+mdjMVyz57Y9HLP5RzNde34JCQRc50ZrG4vXs
+      ddng915j2jnQMFjFGd/8GdkgojSzMZv0PEglHB5PKudUnKoYZVNRksVJhyCbb3A+
+      23KiV6PA0QdiE7Xl2dX3iQf3Z/7+HtCUT9gONu+PNZoZ05vwCui5j/8nwPpZtyL2
+      drdCa15hAoGBAOI3y0PScaV6JrgrDopoKqacC45vE8MHSi0WcM/jHLWF0Mn1+uJD
+      pWKD7LZCesEZkg+pd7scl94JMdww+H+gqIgjCQzQh1X5VhgblqPc011hJoKNAt4x
+      U9rNQvS9Fhoh2Ik5KUMkO7OhjHbSqEkkX+jHobtnOd2hjVmK7mpXi9RbAoGBAMLQ
+      Sd6I3CWtbxFd65s8pJCmTW2DD8R3MA+8JqoCcvMk6bKfS+MxmHPoOaWOzdrrvqYW
+      ihxJi7vCi6sq/xeFZT/LF6BG1lkaEYSiLINyAWwjddgOMaZD/CPIGy9WhzAa93RU
+      Bp3B/bxhEJtjrGlxtBbgszoLBeb+dRBbh/fJPYDlAoGBAL5+A0GqbZ7N/NrrDwSH
+      8Rp5ntWjPb3mXpUXJ4o3kk5dT9MxusFb+2G4+9UCqEIBGVjs+PDshAoqLf1gk3FN
+      xX1WG2HaG4zPOKt2V+TGqIoiq/4VZkvat+UxIefbbkg1JhVvuApc8ZUzPYg1nhZx
+      df4cVVns8/Jo/xFfB6Mu84WvAoGBAKLn8E2Rnp43KICaTFH05Rw8pNSl20KL9HnD
+      +YUDJUKjpHUE9j2XFIggMkx6XTPrHPLgOD+tVJb++TJ6cvQlTWSKHUie09GQlgOW
+      ZajJZd0azgmM3QHPKgJ17B2qusOEWVdCiIHVXavwcyWttNg8B791yQoJe7cNI7E5
+      CTswYijtAoGAVioH74Yoz/XOpNStblNq1/6DtiHlemvZWp/PhnVmg0djo/6TJMx7
+      xuMSPimvIRZplQInoZmQeg1XX/9a0wJvBQ8CadnAPQ9hi4KsCeFvRK0tapPb+AXH
+      4lTE2F20zg/gl6PGRYckZbyA778QyKM2TgM8MBoZvqPJFclqyABSpYI=
+      -----END RSA PRIVATE KEY-----
+
+## GLOBAL FORWARDING-RULE - TAKES TCP TRAFFIC AT PORT 443 AND PASSES IT TO HTTP PROXY
+- name: {{env["name"]}}-elb-forwarding-rule
+  type: compute.v1.globalForwardingRule
+  properties:
+    IPProtocol: TCP
+    loadBalancingScheme: EXTERNAL
+    portRange: 443
+    target: $(ref.{{env["name"]}}-target-proxy.selfLink)

@@ -1,0 +1,27 @@
+info:
+  title: creates a network instance with a subnet
+  description: creates a selection of network instances including firewalls, vpns, forwarding rules (udp, esp, etc), routers and routes
+  
+required:
+- ipCidrRange
+- region 
+- peerAddress 
+- asn 
+- sharedSecret
+
+properties:
+  ipCidrRange:
+    type: string
+    description: range of internal addresses that are owned by the subnetwork
+  region:
+    type: string
+    description: the region where the subnetwork will reside
+  peerAddress:
+    type: string
+    description: ip address that is assigned to any peers within the vpn tunnel
+  asn:
+    type: integer
+    description: 65001 is a private google asn used in the cloud routers
+  sharedSecret:
+    type: string
+    description: pre-shared key which allows access to the network

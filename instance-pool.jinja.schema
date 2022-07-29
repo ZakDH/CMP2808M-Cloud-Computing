@@ -1,0 +1,32 @@
+info:
+  title: creating a pool of similar instances in one zone
+  description: create a collection of instances (vms) of any given amount and zone
+
+required:
+- zone
+- count
+- Name
+- hasExternalIp
+- network
+- subnet
+
+properties:
+  zone:
+   type: string
+   description: Zone the instance will run in
+  count:
+   type: integer
+   description: Number of instances in the pool
+  Name:
+   type: string
+   description: Used for naming the instances in the pool
+  hasExternalIp:
+   type: boolean
+   description: If the instances should have an external IP set to True
+  network:
+   type: string
+   description: Used to assign instance to the network
+  subnet:
+   type: string
+   description: Used to assign instance to the subnet within the network
+   

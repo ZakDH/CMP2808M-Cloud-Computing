@@ -1,0 +1,8 @@
+resources:
+## STORAGE BUCKET
+- name: {{env["name"]}}-bucket
+  type: storage.v1.bucket
+  properties:
+    predefinedAcl: projectPrivate ## a predefined acl list named projectPrivate
+    projection: full ## gives the bucket full projection
+    storageClass: MULTI_REGIONAL ## Have a multi-regional storage class

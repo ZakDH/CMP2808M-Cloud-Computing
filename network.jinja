@@ -1,0 +1,109 @@
+#https://github.com/GoogleCloudPlatform/deploymentmanager-samples/tree/master/examples/v2/vpn_auto_subnet#
+#https://github.com/GoogleCloudPlatform/deploymentmanager-samples/blob/master/examples/v2/cloud_router/cloud_router.jinja#
+resources:
+## NETWORK - CREATES A NETWORK WITHOUT CREATING ANY SUBNETWORKS AUTOMATICALLY
+- name: {{env["name"]}}-network
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+    routingConfig:
+      routingMode: REGIONAL
+
+## SUBNETWORK - FIRST SUBNETWORK WITH AN IP RANGE VARIABLE, LINKING WITH THE CREATED NETWORK EARLIER
+- name: {{env["name"]}}-subnetwork
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: {{ properties["ipCidrRange"] }}
+    network: $(ref.network-network.selfLink)
+    region: {{ properties["region"] }}
+
+## SUBNETWORK2 - SECOND SUBNETWORK WITH AN IP RANGE OF 10.11.0.0/24, INSTANCES IN THIS SUBNETWORK WILL BE ASSIGNED AN IP IN THIS RANGE
+- name: {{env["name"]}}-subnetwork2
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: 10.11.0.0/24
+    network: $(ref.network-network.selfLink)
+    region: {{ properties["region"] }}
+
+## VPN GATEWAY - VPN GATEWAY THAT REFERS TO THE CREATED NETWORK
+- name: {{ env["name"] }}-gateway
+  type: compute.v1.targetVpnGateway
+  properties:
+    region: {{ properties["region"] }}
+    network: $(ref.{{ env["name"] }}-network.selfLink)
+
+## STATIC IP - STATIC IP USED IN THE ESP AND UDP RULES
+- name: {{ env["name"] }}-address
+  type: compute.v1.address
+  properties:
+    region: {{ properties["region"] }}
+
+## ESP RULE - ENCAPSULATING SECURITY PAYLOAD, PROVIDES AUTHENTICATION, INTEGRITY AND CONFIDENTIALITY OF NETWORK PACKETS
+- name: {{env["name"]}}-esp
+  type: compute.v1.forwardingRule
+  properties:
+    region: {{properties["region"]}}
+    IPProtocol: ESP
+    IPAddress: $(ref.{{ env["name"] }}-address.address)
+    target: $(ref.{{ env["name"] }}-gateway.selfLink)
+
+## UDP4500 RULE - USER DATAGRAM PROTOCOL, SENDS SHORT MESSAGES CALLED DATAGRAMS CONTAINING FOUR FIELDS OF TWO BYTES
+- name: {{env["name"]}}-udp4500
+  type: compute.v1.forwardingRule
+  properties:
+    region: {{properties["region"]}}
+    IPProtocol: UDP
+    portRange: 4500
+    IPAddress: $(ref.{{env["name"]}}-address.address)
+    target: $(ref.{{ env["name"] }}-gateway.selfLink)
+
+## UDP500 RULE - USES PORT 500 TO MAKE THE TRANSMISSION OF UDP DATAGRAM MESSAGES FROM ONE COMPUTER TO ANOTHER
+- name: {{env["name"]}}-udp500
+  type: compute.v1.forwardingRule
+  properties:
+    region: {{properties["region"]}}
+    IPProtocol: UDP
+    portRange: 500
+    IPAddress: $(ref.{{env["name"]}}-address.address)
+    target: $(ref.{{ env["name"] }}-gateway.selfLink)
+
+## ROUTER - ALLOWS DYNAMICALLY EXCHANGEABLE ROUTES BETWEEN NETWORKS
+- name: {{env["name"]}}-router
+  type: compute.v1.router
+  properties:
+    asn: {{properties["asn"]}}
+    network: $(ref.{{env["name"]}}-network.selfLink)
+    region: {{properties["region"]}}
+
+## VPN TUNNEL - DATA TRAVELS THROUGH THE VPN TUNNEL AND IS ENCRYPTED WHILST TRAVELLING ACROSS THE INTERNET
+- name: {{env["name"]}}-tunnel
+  type: compute.v1.vpnTunnel
+  properties:
+    ikeVersion: 2
+    peerIp: {{ properties["peerAddress"] }}
+    region: {{ properties["region"] }}
+    forwardingRule: $(ref.{{env["name"]}}-udp4500.selfLink)
+    router: $(ref.{{env["name"]}}-router.selfLink)
+    sharedSecret: {{ properties["sharedSecret"] }}
+    targetVpnGateway: $(ref.{{ env["name"] }}-gateway.selfLink)
+
+## FIREWALL - ALLOWS ACCESS INBOUND AND OUTBOUND TO THE NETWORK, THE PROTOCOLS ALLOWED IN THIS CASE ARE TCP, UDP AND ICMP PROTOCOLS WITH ANY SOURCE RANGES BEING ALLOWED
+- name: {{ env["name"] }}-firewall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.{{ env["name"] }}-network.selfLink)
+    sourceRanges: ["0.0.0.0/0"]
+    allowed:
+      - IPProtocol: tcp
+      - IPProtocol: udp
+      - IPProtocol: icmp
+
+## OUTBOUND ROUTE - ROUTE THAT IS TAKEN BY OUTBOUND TRAFFIC, TRAFFIC HOPS TO THE VPN TUNNEL WITH ANY DESTINATION ROUTE AND A CUSTOM MADE TAG
+- name: {{ env["name"] }}-route
+  type: compute.v1.route 
+  properties:
+    network: $(ref.{{ env["name"] }}-network.selfLink)
+    nextHopVpnTunnel: $(ref.{{ env["name"] }}-tunnel.selfLink)
+    priority: 100
+    destRange: 0.0.0.0/0
+    tags: ["network-route"]

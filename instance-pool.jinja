@@ -1,0 +1,24 @@
+resources:
+{% for index in range(1, properties['count'] + 1) %} ## For loop for each index in the range + 1, this is added to the end of the instance name
+{% set NAME = env['name'] + '-' + index|string %} ## assign the environmental name with the count number at the end
+- name: {{NAME}}
+  type: compute.v1.instance
+  properties:
+    zone: {{ properties['zone'] }}
+    machineType: zones/{{ properties["zone"] }}/machineTypes/n1-standard-1
+    disks:
+    - deviceName: boot
+      type: PERSISTENT
+      diskSizeGb: "50" ##vm instances with windows 2019 only need 50gb of disk space
+      boot: true
+      autoDelete: true
+      initializeParams:
+        diskName: {{NAME}}-disk
+        sourceImage: projects/windows-cloud/global/images/family/windows-2019
+    networkInterfaces:
+    - network: {{ properties["network"] }}
+      subnetwork: {{ properties["subnet"] }}
+      accessConfigs:
+        - name: external-IP
+          type: ONE_TO_ONE_NAT
+{% endfor %}

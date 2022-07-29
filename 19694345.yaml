@@ -1,0 +1,45 @@
+imports: # imports the separate jinja files into the yaml file for use
+- path: instance-pool.jinja
+- path: instance-group.jinja
+- path: bucket.jinja
+- path: sql.jinja
+- path: network.jinja
+resources:
+#section that creates the instances and utilises the jinja files and the code within them
+- name: zhargreaves
+  type: bucket.jinja
+  properties:
+    zone: europe-west2-a
+
+- name: network
+  type: network.jinja
+  properties:
+    ipCidrRange: 10.10.0.0/24 #range of internal addresses that are owned by the subnetwork
+    region: europe-west2
+    peerAddress: 1.2.3.4 #ip address that is assigned to any peers within the vpn tunnel
+    asn: 65001 #65001 is a private google asn used in the cloud routers
+    sharedSecret: network #pre-shared key which allows access to the network
+
+- name: instancepool-vm-debian9 # instance pool utilising debian9 source image
+  type: instance-pool.jinja
+  properties:
+    zone: europe-west2-a
+    count: 2
+    network: $(ref.network-network.selfLink) # references and links to the custom made network 
+    subnet: $(ref.network-subnetwork2.selfLink) # references and links to the custom made subnetwork 
+    hasExternalIp: true # If the instances should have an external IP set to True
+
+- name: instancegroup-vm-windows2019 # instance group of 2 vms that utilise windows 2019 source image
+  type: instance-group.jinja
+  properties:
+    region: europe-west2
+    network: $(ref.network-network.selfLink)
+    subnet: $(ref.network-subnetwork.selfLink)
+    targetSize: 2 # the target size of vm instances to be created is 2
+    maxNumReplicas: 3 # maximum number of instance replicas is set to 3
+
+- name: sql
+  type: sql.jinja
+  properties:
+    tier: db-n1-standard-1 # defines the type of sql instance to be created
+    charset: utf8 # defines the character set that will be used within the database

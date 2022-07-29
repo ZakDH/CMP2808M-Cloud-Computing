@@ -1,0 +1,16 @@
+{% set instance_name = 'sql-' + (range(1, 1000) | random) | string %} ## gives the sql instance name a random number between 1 and 1000 to try and avoid the 1 week instance name period
+resources:
+## SQL INSTANCE
+- name: {{instance_name}}
+  type: sqladmin.v1beta4.instance
+  properties:
+    region: europe-west1
+    settings:
+      tier: {{ properties['tier'] }}
+
+## DATABASE INSTANCE
+- name: {{env["name"]}}-database
+  type: sqladmin.v1beta4.database
+  properties:
+    name: {{env["name"]}}-database
+    instance: $(ref.{{instance_name}}.name) ## links the database instance to the sql instance
